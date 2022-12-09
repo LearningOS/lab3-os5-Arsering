@@ -88,6 +88,10 @@ pub fn sys_close(fd: usize) -> isize {
     syscall(SYSCALL_CLOSE, [fd, 0, 0])
 }
 
+/// 功能：从文件中读取一段内容到缓冲区。
+/// 参数：fd 是待读取文件的文件描述符，切片 buffer 则给出缓冲区。
+/// 返回值：如果出现了错误则返回 -1，否则返回实际读到的字节数。
+/// syscall ID：63
 pub fn sys_read(fd: usize, buffer: &mut [u8]) -> isize {
     syscall(
         SYSCALL_READ,
@@ -166,7 +170,12 @@ pub fn sys_fork() -> isize {
     syscall(SYSCALL_FORK, [0, 0, 0])
 }
 
+/// 功能：将当前进程的地址空间清空并加载一个特定的可执行文件，返回用户态后开始它的执行。
+/// 参数：path 给出了要加载的可执行文件的名字；
+/// 返回值：如果出错的话（如找不到名字相符的可执行文件）则返回 -1，否则不应该返回。
+/// syscall ID：221
 pub fn sys_exec(path: &str, args: &[*const u8]) -> isize {
+    // path 作为 &str 类型是一个胖指针，既有起始地址又包含长度信息，在实际进行系统调用的时候，我们只会将起始地址传给内核
     syscall(
         SYSCALL_EXEC,
         [path.as_ptr() as usize, args.as_ptr() as usize, 0],

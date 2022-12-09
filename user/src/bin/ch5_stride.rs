@@ -13,7 +13,7 @@ static TESTS: &[&str] = &[
 ];
 
 
-use user_lib::{spawn, waitpid, set_priority};
+use user_lib::{spawn, waitpid, set_priority, println};
 
 #[no_mangle]
 pub fn main() -> i32 {
@@ -26,7 +26,9 @@ pub fn main() -> i32 {
     set_priority(4);
     for i in 0..6{
         let mut xstate: i32 = Default::default();
+        // println!("--------------------for now ({}), I am fine", i);
         let wait_pid = waitpid(pid[i] as usize, &mut xstate);
+        
         assert_eq!(pid[i], wait_pid);
     }
     0

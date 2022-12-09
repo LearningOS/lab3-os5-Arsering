@@ -1,6 +1,6 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
 
-use super::{frame_alloc, FrameTracker};
+use super::{frame_alloc, get_num_empty_frame, vpn_range_is_unused, vpn_range_is_used, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
@@ -70,6 +70,57 @@ impl MemorySet {
             self.areas.remove(idx);
         }
     }
+
+    pub fn mmap(&mut self, start: usize, len: usize, port: usize) -> isize {
+        let len_n = (len - 1 + PAGE_SIZE) / PAGE_SIZE;
+        let start_n = start / PAGE_SIZE;
+        let pt = &mut self.page_table;
+
+        if VirtAddr(start).page_offset() != 0
+            || (port & !0x7) != 0
+            || port & 0x7 == 0
+            || get_num_empty_frame() < len_n
+            || !vpn_range_is_unused(pt, start_n, len_n)
+        {
+            -1
+        } else {
+            if len_n == 0 {
+                0
+            } else {
+                let mut map_perm = MapPermission::U;
+                if port & 0x1 != 0 {
+                    map_perm |= MapPermission::R;
+                }
+                if port & 0x2 != 0 {
+                    map_perm |= MapPermission::W;
+                }
+                if port & 0x4 != 0 {
+                    map_perm |= MapPermission::X;
+                }
+
+                self.insert_framed_area(
+                    VirtAddr::from(VirtPageNum::from(start_n)),
+                    VirtAddr::from(VirtPageNum::from(len_n + start_n)),
+                    map_perm,
+                );
+                0
+            }
+        }
+    }
+
+    pub fn munmap(&mut self, start: usize, len: usize) -> isize {
+        let pt = &mut self.page_table;
+        if start % PAGE_SIZE != 0 || !vpn_range_is_used(pt, start, len) || len % PAGE_SIZE != 0 {
+            -1
+        } else {
+            let start_va = start / PAGE_SIZE;
+            let end_va = (len + start) / PAGE_SIZE;
+
+            self.remove_area_with_start_vpn(VirtPageNum(start_va));
+            0
+        }
+    }
+
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
