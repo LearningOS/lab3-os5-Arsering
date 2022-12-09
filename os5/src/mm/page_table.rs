@@ -1,5 +1,7 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
+use crate::config::PAGE_SIZE;
+
 use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::string::String;
 use alloc::vec;
@@ -196,4 +198,48 @@ pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
         .translate_va(VirtAddr::from(va))
         .unwrap()
         .get_mut()
+}
+
+pub fn translate_va(token: usize, va: usize) -> Option<PhysAddr> {
+    let page_table = PageTable::from_token(token);
+    page_table.translate_va(VirtAddr::from(va))
+}
+
+/// 如果给定的虚拟地址范围中的地址在给定的pagetable中都没被占用（被关联了物理页），返回true
+pub fn vpn_range_is_unused(pt: &mut PageTable, start: usize, len: usize) -> bool {
+    let mut result = true;
+    for id in (start..(start + len)).filter(|x| (x % PAGE_SIZE == 0)) {
+        let va = VirtPageNum::from(id);
+        let tmp = pt.find_pte(va);
+
+        if let Some(pte) = tmp {
+            result = !pte.is_valid();
+        }
+        if result == false {
+            break;
+        }
+    }
+    result
+}
+
+/// 如果给定的虚拟地址范围中的地址在给定的pagetable中都被占用（被关联了物理页），返回true
+pub fn vpn_range_is_used(pt: &PageTable, start: usize, len: usize) -> bool {
+    let mut result = true;
+    for id in (start..(start + len)).filter(|x| (x % PAGE_SIZE == 0)) {
+        let va = VirtPageNum::from(id);
+        let tmp = pt.find_pte(va);
+
+        if let Some(pte) = tmp {
+            result = pte.is_valid();
+        }
+        result = match tmp {
+            Some(pte) => pte.is_valid(),
+            None => false,
+        };
+        if result == false {
+            break;
+        }
+
+    }
+    result
 }

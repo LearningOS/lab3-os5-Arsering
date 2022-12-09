@@ -17,6 +17,7 @@ pub struct TaskManager {
 // YOUR JOB: FIFO->Stride
 /// A simple FIFO scheduler.
 impl TaskManager {
+    /// 返回一个空的TaskManager
     pub fn new() -> Self {
         Self {
             ready_queue: VecDeque::new(),
@@ -38,10 +39,12 @@ lazy_static! {
         unsafe { UPSafeCell::new(TaskManager::new()) };
 }
 
+/// 与fetch_task相反，它将一个task重新放到TaskManager中
 pub fn add_task(task: Arc<TaskControlBlock>) {
     TASK_MANAGER.exclusive_access().add(task);
 }
 
+/// 从TaskManager中pop出一个task
 pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
     TASK_MANAGER.exclusive_access().fetch()
 }

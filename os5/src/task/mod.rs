@@ -20,15 +20,17 @@ mod task;
 use crate::loader::get_app_data_by_name;
 use alloc::sync::Arc;
 use lazy_static::*;
-use manager::fetch_task;
+use manager::{fetch_task, stride_scheduling_task};
 use switch::__switch;
-pub use task::{TaskControlBlock, TaskStatus};
+pub use task::{TaskControlBlock, TaskStatus, Schedule};
 
 pub use context::TaskContext;
 pub use manager::add_task;
 pub use pid::{pid_alloc, KernelStack, PidHandle};
 pub use processor::{
-    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
+    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task, set_priority_for_current_task,
+    get_status_of_current_task, get_syscall_times_of_current_task, get_start_time_of_current_task, plus_one_to_syscall_used,
+    mmap, munmap
 };
 
 /// Make current task suspended and switch to the next task
@@ -60,6 +62,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     let mut inner = task.inner_exclusive_access();
     // Change status to Zombie
     inner.task_status = TaskStatus::Zombie;
+
     // Record exit code
     inner.exit_code = exit_code;
     // do not move to its parent but under initproc

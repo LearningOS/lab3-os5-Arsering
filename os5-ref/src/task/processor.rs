@@ -59,6 +59,7 @@ pub fn run_tasks() {
             task_inner.task_status = TaskStatus::Running;
             drop(task_inner);
             // release coming task TCB manually
+            // processor获得了task的所有权了
             processor.current = Some(task);
             // release processor manually
             drop(processor);

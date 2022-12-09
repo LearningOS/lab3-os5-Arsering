@@ -30,6 +30,7 @@ pub fn get_app_data(app_id: usize) -> &'static [u8] {
 
 lazy_static! {
     /// A global read-only vector for saving app names
+    /// 用一个全局可见的 只读 向量 APP_NAMES 来按照顺序将所有应用的名字从Load_app.S中取出并保存在内存中
     static ref APP_NAMES: Vec<&'static str> = {
         let num_app = get_num_app();
         extern "C" {
@@ -42,7 +43,7 @@ lazy_static! {
                 let mut end = start;
                 while end.read_volatile() != b'\0' {
                     end = end.add(1);
-                }
+                } // read_volatile应该是只读不改变内容
                 let slice = core::slice::from_raw_parts(start, end as usize - start as usize);
                 let str = core::str::from_utf8(slice).unwrap();
                 v.push(str);
@@ -54,6 +55,7 @@ lazy_static! {
 }
 
 /// Get elf data by app name
+/// 按照应用的名字来查找获得应用的 ELF 数据
 pub fn get_app_data_by_name(name: &str) -> Option<&'static [u8]> {
     let num_app = get_num_app();
     (0..num_app)
@@ -62,6 +64,7 @@ pub fn get_app_data_by_name(name: &str) -> Option<&'static [u8]> {
 }
 
 /// Print all of app names during kernel initialization
+/// 在内核初始化时被调用，它可以打印出所有可用的应用的名字
 pub fn list_apps() {
     println!("/**** APPS ****");
     for app in APP_NAMES.iter() {

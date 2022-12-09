@@ -1,14 +1,16 @@
 //! Process management syscalls
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::get_app_data_by_name;
-use crate::mm::{translated_refmut, translated_str};
+use crate::mm::{translate_va, translated_refmut, translated_str};
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next,
-    suspend_current_and_run_next, TaskStatus,
+    set_priority_for_current_task, suspend_current_and_run_next, TaskStatus,
+    get_status_of_current_task, get_syscall_times_of_current_task, get_start_time_of_current_task, mmap, munmap
 };
 use crate::timer::get_time_us;
 use alloc::sync::Arc;
-use crate::config::MAX_SYSCALL_NUM;
+use alloc::vec::Vec;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -65,7 +67,7 @@ pub fn sys_fork() -> isize {
 pub fn sys_exec(path: *const u8) -> isize {
     let token = current_user_token();
     let path = translated_str(token, path);
-    
+
     if let Some(data) = get_app_data_by_name(path.as_str()) {
         let task = current_task().unwrap();
         task.exec(data);
@@ -84,7 +86,6 @@ pub fn sys_exec(path: *const u8) -> isize {
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
     let task = current_task().unwrap();
     // find a child process
-    println!("===============look at me================");
     // ---- access current TCB exclusively
     let mut inner = task.inner_exclusive_access();
     if !inner
@@ -92,7 +93,6 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         .iter()
         .any(|p| pid == -1 || pid as usize == p.getpid())
     {
-        println!("==============It is not my child==============");
         return -1;
         // ---- release current PCB
     }
@@ -101,6 +101,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         p.inner_exclusive_access().is_zombie() && (pid == -1 || pid as usize == p.getpid())
         // ++++ release child PCB
     });
+    
     if let Some((idx, _)) = pair {
         let child = inner.children.remove(idx);
         // confirm that child will be deallocated after removing from children list
@@ -118,39 +119,70 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 }
 
 // YOUR JOB: 引入虚地址后重写 sys_get_time
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    let _us = get_time_us();
-    // unsafe {
-    //     *ts = TimeVal {
-    //         sec: us / 1_000_000,
-    //         usec: us % 1_000_000,
-    //     };
-    // }
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
+    let token = current_user_token();
+    let ppn = translate_va(token, ts as usize).unwrap();
+    let ts = ppn.0 as *mut TimeVal;
+    let us = get_time_us();
+    unsafe {
+        *ts = TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        };
+    }
     0
 }
 
 // YOUR JOB: 引入虚地址后重写 sys_task_info
 pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
-    -1
+    let token = current_user_token();
+    let ppn = translate_va(token, ti as usize).unwrap();
+    let ti = ppn.0 as *mut TaskInfo;
+
+    unsafe {
+        *ti = TaskInfo{
+            status: get_status_of_current_task(),
+            syscall_times: get_syscall_times_of_current_task(),
+            time: (get_time_us() - get_start_time_of_current_task()) / 1_000,
+        }
+    }
+    0
 }
 
 // YOUR JOB: 实现sys_set_priority，为任务添加优先级
-pub fn sys_set_priority(_prio: isize) -> isize {
-    -1
+pub fn sys_set_priority(prio: isize) -> isize {
+    if prio < 2 {
+        -1
+    } else {
+        set_priority_for_current_task(prio)
+    }
 }
 
 // YOUR JOB: 扩展内核以实现 sys_mmap 和 sys_munmap
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    -1
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+    mmap(start, len, port)
 }
 
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    -1
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    munmap(start, len)
 }
 
 //
 // YOUR JOB: 实现 sys_spawn 系统调用
-// ALERT: 注意在实现 SPAWN 时不需要复制父进程地址空间，SPAWN != FORK + EXEC 
-pub fn sys_spawn(_path: *const u8) -> isize {
-    -1
+// ALERT: 注意在实现 SPAWN 时不需要复制父进程地址空间，SPAWN != FORK + EXEC
+pub fn sys_spawn(path: *const u8) -> isize {
+    let token = current_user_token();
+    let path = translated_str(token, path);
+
+    if let Some(data) = get_app_data_by_name(path.as_str()) {
+        let current_task = current_task().unwrap();
+        let new_task = current_task.spawn(data);
+        let new_pid = new_task.pid.0;
+
+        // add new task to scheduler
+        add_task(new_task);
+        new_pid as isize
+    } else {
+        -1
+    }
 }
